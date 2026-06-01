@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeatherBot — AI Weather Chatbot</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --glass: rgba(255, 255, 255, 0.08);
+      --glass-strong: rgba(255, 255, 255, 0.14);
+      --border: rgba(255, 255, 255, 0.18);
+      --accent: #7dd3fc;
+      --text: #f1f5f9;
+      --muted: #cbd5e1;
+    }
+    html, body { height: 100%; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      overflow: hidden;
+      background: #0b1026;
+      position: relative;
+    }
+
+    /* Colorful animated backdrop — the glass blurs THIS */
+    .bg-blobs { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.7;
+      animation: float 18s ease-in-out infinite;
+    }
+    .blob.b1 { width: 460px; height: 460px; background: #6366f1; top: -120px; left: -100px; }
+    .blob.b2 { width: 420px; height: 420px; background: #ec4899; bottom: -140px; right: -80px; animation-delay: -4s; }
+    .blob.b3 { width: 380px; height: 380px; background: #22d3ee; top: 35%; left: 45%; animation-delay: -8s; }
+    .blob.b4 { width: 340px; height: 340px; background: #f59e0b; bottom: 10%; left: -60px; animation-delay: -12s; }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%      { transform: translate(50px, -40px) scale(1.12); }
+      66%      { transform: translate(-40px, 30px) scale(0.92); }
+    }
+
+    /* The frosted glass chat panel */
+    .app {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 480px;
+      height: 90vh;
+      max-height: 720px;
+      background: var(--glass);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37), inset 0 1px 0 rgba(255,255,255,0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      padding: 18px 22px;
+      background: var(--glass-strong);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      backdrop-filter: blur(10px);
+    }
+    header .logo {
+      font-size: 26px;
+      width: 46px; height: 46px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
+    header p { font-size: 12px; color: var(--muted); }
+
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #chat::-webkit-scrollbar { width: 6px; }
+    #chat::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+
+    .msg {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      animation: pop 0.22s ease;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+    @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+    .bot {
+      background: var(--glass-strong);
+      align-self: flex-start;
+      border-bottom-left-radius: 5px;
+    }
+    .user {
+      background: linear-gradient(135deg, rgba(125,211,252,0.32), rgba(99,102,241,0.32));
+      align-self: flex-end;
+      border-bottom-right-radius: 5px;
+      color: #fff;
+    }
+    .typing { color: var(--muted); font-style: italic; }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      border-top: 1px solid var(--border);
+      background: var(--glass-strong);
+      backdrop-filter: blur(10px);
+    }
+    .tools { display: flex; gap: 9px; }
+    .input-row { display: flex; gap: 9px; }
+    input {
+      flex: 1;
+      padding: 13px 18px;
+      border-radius: 24px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      font-size: 14.5px;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    input::placeholder { color: rgba(255,255,255,0.5); }
+    input:focus {
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.12);
+      box-shadow: 0 0 0 3px rgba(125,211,252,0.15);
+    }
+    button {
+      padding: 0 22px;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(125,211,252,0.85), rgba(99,102,241,0.85));
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: transform 0.12s, filter 0.2s;
+    }
+    button:hover { filter: brightness(1.12); }
+    button:active { transform: scale(0.96); }
+
+    .icon-btn {
+      padding: 0;
+      flex: 1;
+      height: 44px;
+      font-size: 18px;
+      background: rgba(255,255,255,0.1);
+    }
+    .icon-btn:disabled { opacity: 0.5; cursor: progress; }
+    .icon-btn.active { background: linear-gradient(135deg, rgba(125,211,252,0.85), rgba(99,102,241,0.85)); }
+    .icon-btn.listening {
+      background: linear-gradient(135deg, #f87171, #ec4899);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.6); }
+      50%      { box-shadow: 0 0 0 8px rgba(248,113,113,0); }
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .chip {
+      font-size: 12.5px;
+      padding: 7px 13px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      transition: background 0.2s, transform 0.12s;
+    }
+    .chip:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
+
+    /* Map overlay — slides over the chat area */
+    #mapPanel {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: none;
+      flex-direction: column;
+      background: var(--glass-strong);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    #mapPanel.open { display: flex; }
+    .map-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .map-bar span { font-size: 14px; color: var(--muted); flex: 1; }
+    .map-bar .close-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      border-radius: 18px;
+    }
+    #map { flex: 1; width: 100%; }
+    .leaflet-container { background: #0b1026; font: inherit; }
+  </style>
+</head>
+<body>
+  <div class="bg-blobs">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+    <div class="blob b4"></div>
+  </div>
+  <div class="app">
+    <header>
+      <span class="logo">🌤️</span>
+      <div>
+        <h1>WeatherBot</h1>
+        <p>Ask me the weather for any city on Earth</p>
+      </div>
+    </header>
+    <div id="chat"></div>
+    <div id="mapPanel">
+      <div class="map-bar">
+        <span>Tap anywhere on the map to get its weather</span>
+        <button type="button" id="mapClose" class="close-btn">Close ✕</button>
+      </div>
+      <div id="map"></div>
+    </div>
+    <form id="form" autocomplete="off">
+      <div class="tools">
+        <button type="button" id="locBtn" class="icon-btn" title="Use my location">📍</button>
+        <button type="button" id="mapBtn" class="icon-btn" title="Pick on map">🗺️</button>
+        <button type="button" id="micBtn" class="icon-btn" title="Ask by voice">🎤</button>
+        <button type="button" id="speakBtn" class="icon-btn" title="Read replies aloud">🔇</button>
+      </div>
+      <div class="input-row">
+        <input id="input" placeholder="e.g. Will it rain in Paris tomorrow?" />
+        <button type="submit">Send</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const chat = document.getElementById("chat");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const locBtn = document.getElementById("locBtn");
+    const mapBtn = document.getElementById("mapBtn");
+    const mapPanel = document.getElementById("mapPanel");
+    const mapClose = document.getElementById("mapClose");
+    const micBtn = document.getElementById("micBtn");
+    const speakBtn = document.getElementById("speakBtn");
+
+    // Map Open-Meteo weather codes -> description + emoji
+    const WEATHER = {
+      0:  ["Clear sky", "☀️"],
+      1:  ["Mainly clear", "🌤️"],
+      2:  ["Partly cloudy", "⛅"],
+      3:  ["Overcast", "☁️"],
+      45: ["Foggy", "🌫️"], 48: ["Rime fog", "🌫️"],
+      51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
+      61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
+      71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"],
+      77: ["Snow grains", "🌨️"],
+      80: ["Light showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Violent showers", "⛈️"],
+      85: ["Snow showers", "🌨️"], 86: ["Heavy snow showers", "❄️"],
+      95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm + hail", "⛈️"], 99: ["Severe thunderstorm", "⛈️"]
+    };
+
+    function addMsg(text, who) {
+      const div = document.createElement("div");
+      div.className = "msg " + who;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+      if (who === "bot") speak(text);
+      return div;
+    }
+
+    // Each item is either a string (submitted as a typed question) or
+    // { label, action } where action is a custom click handler.
+    function addChips(items) {
+      const wrap = document.createElement("div");
+      wrap.className = "msg bot";
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      items.forEach(item => {
+        const c = document.createElement("span");
+        c.className = "chip";
+        if (typeof item === "string") {
+          c.textContent = item;
+          c.onclick = () => { input.value = item; form.requestSubmit(); };
+        } else {
+          c.textContent = item.label;
+          c.onclick = item.action;
+        }
+        chips.appendChild(c);
+      });
+      wrap.appendChild(chips);
+      chat.appendChild(wrap);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // --- Simple natural-language understanding ---------------------------
+    // Pull out the time intent and the city name from a free-text message.
+    function parse(text) {
+      const lower = text.toLowerCase();
+      let when = "today";
+      if (/\btomorrow\b/.test(lower)) when = "tomorrow";
+      else if (/\b(this )?week|forecast|next few days|coming days\b/.test(lower)) when = "week";
+
+      // Remove filler words to isolate the place name.
+      let city = text
+        .replace(/[?.!,]/g, " ")
+        .replace(/\b(what'?s|what is|whats|how'?s|hows|tell me|the|weather|temperature|temp|forecast|will it|is it|going to|gonna|rain|raining|sunny|hot|cold|today|tomorrow|this week|next few days|coming days|like|in|at|for|of|on|right now|now|currently|please)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      return { city, when };
+    }
+
+    async function geocode(city) {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data.results || !data.results.length) return null;
+      const r = data.results[0];
+      return { lat: r.latitude, lon: r.longitude, name: r.name, country: r.country, admin: r.admin1 };
+    }
+
+    async function getWeather(lat, lon) {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+        + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code`
+        + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max`
+        + `&timezone=auto&forecast_days=7`;
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    function describe(code) {
+      return WEATHER[code] || ["Unknown", "❓"];
+    }
+
+    function place(loc) {
+      return [loc.name, loc.admin, loc.country].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(", ");
+    }
+
+    // Render the weather for a known location + time intent.
+    async function report(loc, when) {
+      const typing = addMsg("Checking the weather… ⏳", "bot");
+      typing.classList.add("typing");
+
+      try {
+        const w = await getWeather(loc.lat, loc.lon);
+        typing.remove();
+        const where = place(loc);
+
+        if (when === "today") {
+          const c = w.current;
+          const [desc, emoji] = describe(c.weather_code);
+          addMsg(
+            `${emoji} Right now in ${where}:\n` +
+            `• ${desc}, ${Math.round(c.temperature_2m)}°C (feels like ${Math.round(c.apparent_temperature)}°C)\n` +
+            `• Humidity: ${c.relative_humidity_2m}%\n` +
+            `• Wind: ${Math.round(c.wind_speed_10m)} km/h\n` +
+            `• Rain chance today: ${w.daily.precipitation_probability_max[0]}%`,
+            "bot"
+          );
+        } else if (when === "tomorrow") {
+          const i = 1;
+          const [desc, emoji] = describe(w.daily.weather_code[i]);
+          addMsg(
+            `${emoji} Tomorrow in ${where}:\n` +
+            `• ${desc}\n` +
+            `• High ${Math.round(w.daily.temperature_2m_max[i])}°C / Low ${Math.round(w.daily.temperature_2m_min[i])}°C\n` +
+            `• Rain chance: ${w.daily.precipitation_probability_max[i]}%`,
+            "bot"
+          );
+        } else {
+          let out = `📅 7-day forecast for ${where}:\n`;
+          for (let i = 0; i < w.daily.time.length; i++) {
+            const day = new Date(w.daily.time[i]).toLocaleDateString("en", { weekday: "short" });
+            const [desc, emoji] = describe(w.daily.weather_code[i]);
+            out += `${emoji} ${day}: ${Math.round(w.daily.temperature_2m_min[i])}–${Math.round(w.daily.temperature_2m_max[i])}°C, ${desc} (${w.daily.precipitation_probability_max[i]}% rain)\n`;
+          }
+          addMsg(out.trim(), "bot");
+        }
+      } catch (err) {
+        typing.remove();
+        addMsg("⚠️ Sorry, something went wrong fetching the weather. Check your internet and try again.", "bot");
+        console.error(err);
+      }
+    }
+
+    // Free-text question -> location + time intent -> report.
+    async function answer(text) {
+      const { city, when } = parse(text);
+
+      if (!city) {
+        addMsg("Which city should I check? Try e.g. \"weather in London\" 🌍", "bot");
+        return;
+      }
+
+      const loc = await geocode(city);
+      if (!loc) {
+        addMsg(`Hmm, I couldn't find a place called "${city}". Could you check the spelling? 🤔`, "bot");
+        return;
+      }
+      report(loc, when);
+    }
+
+    // Turn coordinates into a readable place name (no API key needed).
+    async function reverseGeocode(lat, lon) {
+      try {
+        const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+        const res = await fetch(url);
+        const d = await res.json();
+        return {
+          name: d.city || d.locality || d.principalSubdivision || "Your location",
+          admin: d.principalSubdivision,
+          country: d.countryName,
+        };
+      } catch {
+        return { name: "Your location" };
+      }
+    }
+
+    // Ask the browser for the user's GPS coordinates, then report the weather.
+    function useMyLocation() {
+      if (!navigator.geolocation) {
+        addMsg("⚠️ Your browser doesn't support location access. Try typing a city name instead.", "bot");
+        return;
+      }
+
+      addMsg("📍 Use my location", "user");
+      const typing = addMsg("Getting your location… 🛰️", "bot");
+      typing.classList.add("typing");
+      locBtn.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          typing.remove();
+          locBtn.disabled = false;
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const geo = await reverseGeocode(lat, lon);
+          const loc = { lat, lon, ...geo };
+          await report(loc, "today");
+          // Let the user drill into the forecast without re-locating.
+          addChips([
+            { label: "Tomorrow", action: () => report(loc, "tomorrow") },
+            { label: "7-day forecast", action: () => report(loc, "week") },
+          ]);
+        },
+        (err) => {
+          typing.remove();
+          locBtn.disabled = false;
+          const msg = err.code === err.PERMISSION_DENIED
+            ? "I need permission to access your location. Please allow it in your browser, or just type a city name. 🌍"
+            : "⚠️ I couldn't get your location. Please type a city name instead.";
+          addMsg(msg, "bot");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    }
+
+    locBtn.addEventListener("click", useMyLocation);
+
+    // --- Interactive map (Leaflet + OpenStreetMap) -----------------------
+    let map, mapMarker;
+
+    function openMap() {
+      mapPanel.classList.add("open");
+      // Create the map on first open (container must be visible & sized).
+      if (!map) {
+        map = L.map("map", { zoomControl: true }).setView([20, 0], 2);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors",
+          maxZoom: 19,
+        }).addTo(map);
+        map.on("click", async (e) => {
+          const { lat, lng } = e.latlng;
+          if (mapMarker) mapMarker.setLatLng(e.latlng);
+          else mapMarker = L.marker(e.latlng).addTo(map);
+          closeMap();
+          const geo = await reverseGeocode(lat, lng);
+          const loc = { lat, lon: lng, ...geo };
+          addMsg(`📍 Picked on map: ${place(geo)}`, "user");
+          await report(loc, "today");
+          addChips([
+            { label: "Tomorrow", action: () => report(loc, "tomorrow") },
+            { label: "7-day forecast", action: () => report(loc, "week") },
+          ]);
+        });
+      }
+      // Leaflet needs a nudge after the container becomes visible.
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+
+    function closeMap() {
+      mapPanel.classList.remove("open");
+    }
+
+    mapBtn.addEventListener("click", openMap);
+    mapClose.addEventListener("click", closeMap);
+
+    // --- Voice chat (Web Speech API) -------------------------------------
+    let voiceOut = false;
+
+    // Read a bot reply aloud — strip emoji/markup and make units speakable.
+    function speak(text) {
+      if (!voiceOut || !window.speechSynthesis) return;
+      const clean = text
+        .replace(/°C/g, " degrees Celsius")
+        .replace(/km\/h/g, " kilometers per hour")
+        .replace(/[•\n]/g, ". ")
+        .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "") // emoji
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!clean) return;
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = "en-US";
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+
+    // Toggle whether replies are spoken.
+    speakBtn.addEventListener("click", () => {
+      if (!window.speechSynthesis) {
+        addMsg("⚠️ Speech output isn't supported in this browser.", "bot");
+        return;
+      }
+      voiceOut = !voiceOut;
+      speakBtn.textContent = voiceOut ? "🔊" : "🔇";
+      speakBtn.classList.toggle("active", voiceOut);
+      if (!voiceOut) window.speechSynthesis.cancel();
+    });
+
+    // Voice input: capture speech, drop it in the box, and send it.
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    function startListening() {
+      if (!SpeechRec) {
+        addMsg("⚠️ Voice input isn't supported here. Try Chrome or Edge, and use https or localhost.", "bot");
+        return;
+      }
+      const rec = new SpeechRec();
+      rec.lang = "en-US";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+
+      const original = input.placeholder;
+      micBtn.classList.add("listening");
+      input.placeholder = "Listening… 🎤";
+
+      rec.onresult = (e) => {
+        const text = e.results[0][0].transcript;
+        input.value = text;
+        form.requestSubmit();
+      };
+      rec.onerror = (e) => {
+        const msg = e.error === "not-allowed"
+          ? "I need microphone permission. Please allow it in your browser. 🎤"
+          : "⚠️ I couldn't hear you. Please try again or type your question.";
+        addMsg(msg, "bot");
+      };
+      rec.onend = () => {
+        micBtn.classList.remove("listening");
+        input.placeholder = original;
+      };
+
+      rec.start();
+    }
+
+    micBtn.addEventListener("click", startListening);
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      addMsg(text, "user");
+      input.value = "";
+      answer(text);
+    });
+
+    // Greeting
+    addMsg("Hi! I'm WeatherBot 🌤️ Ask me about the weather anywhere. For example:", "bot");
+    addChips([
+      { label: "📍 My location", action: useMyLocation },
+      "Weather in Tokyo",
+      "Will it rain in Paris tomorrow?",
+      "Forecast for New York",
+      "Weather in Karachi",
+    ]);
+  </script>
+</body>
+</html>
